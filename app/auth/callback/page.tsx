@@ -1,33 +1,55 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseClient } from "@/lib/supabase/client";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function parseFragmentTokens(hash: string) {
+  const params = new URLSearchParams(hash.replace(/^#/, ""));
+  const access_token = params.get("access_token") || undefined;
+  const refresh_token = params.get("refresh_token") || undefined;
+  return { access_token, refresh_token };
+}
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [message, setMessage] = useState("جارٍ التحقق من الجلسة...");
 
   useEffect(() => {
     (async () => {
       try {
-        // Handles hash fragments from Supabase (access_token, refresh_token, type=signup|recovery)
-        const { error } = await supabaseClient.auth.getSessionFromUrl({ storeSession: true });
-
-        if (error) {
-          setMessage("فشل إنشاء الجلسة، ستتم إعادتك...");
-          setTimeout(() => router.replace("/membership?auth=failed"), 600);
+        // 1) try hash fragments (signup/recovery)
+        const { access_token, refresh_token } = parseFragmentTokens(window.location.hash || "");
+        if (access_token && refresh_token) {
+          const { error } = await supabaseClient.auth.setSession({ access_token, refresh_token });
+          if (error) throw error;
+          setMessage("تم التأكيد، جاري التحويل...");
+          setTimeout(() => router.replace("/membership?auth=ok"), 200);
           return;
         }
 
-        setMessage("تم التأكيد، جاري التحويل...");
-        setTimeout(() => router.replace("/membership?auth=ok"), 300);
+        // 2) fallback: code param (PKCE)
+        const code = searchParams.get("code");
+        if (code) {
+          const { error } = await supabaseClient.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+          setMessage("تم التأكيد، جاري التحويل...");
+          setTimeout(() => router.replace("/membership?auth=ok"), 200);
+          return;
+        }
+
+        setMessage("لم يتم العثور على بيانات جلسة. ستتم إعادتك...");
+        setTimeout(() => router.replace("/membership?auth=failed"), 600);
       } catch (e: any) {
         setMessage(e?.message || "خطأ غير متوقع");
         setTimeout(() => router.replace("/membership?auth=failed"), 800);
       }
     })();
-  }, [router]);
+  }, [router, searchParams]);
 
   return (
     <div className="mx-auto max-w-lg rounded-3xl border border-[color:var(--glass-border)] bg-[color:var(--glass)] p-8 text-center shadow-[var(--shadow)] backdrop-blur-xl">
