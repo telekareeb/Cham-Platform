@@ -9,7 +9,7 @@ export default function Footer() {
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 overflow-hidden rounded-xl border border-[color:var(--glass-border)] bg-white/60">
                 <img
-                  src="/brand/cham-logo.png"
+                  src="/media/cham-logo.png"
                   alt="CHAM"
                   className="h-full w-full object-contain p-1"
                 />
