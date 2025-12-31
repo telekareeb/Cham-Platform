@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabaseClient } from "@/lib/supabase/client";
 import {
   COUNTRIES,
   DEFAULT_COUNTRY_ISO2,
@@ -26,6 +25,12 @@ type FormState = {
   lastNameAr: string;
 
   dateOfBirth: string; // YYYY-MM-DD
+
+  maritalStatus: "single" | "married" | "";
+  childrenCount: string; // numeric string
+  spouseFirst: string;
+  spouseLast: string;
+  childrenNames: string[];
 
   street: string;
   postalCode: string;
@@ -66,6 +71,22 @@ function ageInYearsFromISO(dobIso: string) {
   return age;
 }
 
+function latinOnly(value: string) {
+  return value.replace(/[^A-Za-z\\s'-]/g, "");
+}
+
+function latinAndDigits(value: string) {
+  return value.replace(/[^A-Za-z0-9\\s'.,-]/g, "");
+}
+
+function emailLatin(value: string) {
+  return value.replace(/[^A-Za-z0-9@._+-]/g, "");
+}
+
+function phoneDigits(value: string) {
+  return value.replace(/[^0-9+\\s-]/g, "");
+}
+
 export default function MembershipPage() {
   const router = useRouter();
   const [payment, setPayment] = useState<PaymentUI>("stripe");
@@ -86,6 +107,12 @@ export default function MembershipPage() {
 
     dateOfBirth: "",
 
+    maritalStatus: "",
+    childrenCount: "0",
+    spouseFirst: "",
+    spouseLast: "",
+    childrenNames: [],
+
     street: "",
     postalCode: "",
     city: "",
@@ -97,6 +124,7 @@ export default function MembershipPage() {
   });
 
   const dialOptions = useMemo(() => getUniqueDialCountries(), []);
+  const childrenCountNum = Number(form.childrenCount || "0") || 0;
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -129,6 +157,10 @@ export default function MembershipPage() {
     if (age === null) return "تاريخ الميلاد غير صحيح";
     if (age < 16) return "الانتساب متاح لمن عمره 16 سنة فما فوق";
 
+    if (!form.maritalStatus) return "يرجى تحديد الحالة العائلية";
+    const childrenNum = Number(form.childrenCount || "0");
+    if (Number.isNaN(childrenNum) || childrenNum < 0) return "عدد الأولاد يجب أن يكون رقماً صحيحاً أو 0";
+
     if (!form.street.trim()) return "اسم ورقم الشارع مطلوب";
     if (!form.postalCode.trim()) return "الرمز البريدي مطلوب";
     if (!form.city.trim()) return "المدينة مطلوبة";
@@ -154,6 +186,7 @@ export default function MembershipPage() {
           ...draft.form,
           country: draft.form?.country || prev.country,
           phoneCountry: draft.form?.phoneCountry || prev.phoneCountry,
+          childrenNames: draft.form?.childrenNames || prev.childrenNames || [],
         }));
       }
       if (draft?.payment) setPayment(draft.payment);
@@ -162,25 +195,7 @@ export default function MembershipPage() {
     }
   }, []);
 
-  // ✅ auto submit if returning from callback (non-manual)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("auth") !== "ok") return;
-    if (payment === "manual") return;
-
-    (async () => {
-      try {
-        const { data } = await supabaseClient.auth.getUser();
-        if (!data.user) return;
-        await submitMembership({ skipAuth: true });
-      } catch {
-        // ignore
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function submitMembership(opts?: { skipAuth?: boolean }) {
+  async function submitMembership() {
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -192,85 +207,16 @@ export default function MembershipPage() {
 
     setLoading(true);
     try {
-      const { data } = await supabaseClient.auth.getUser();
-      const user = data.user;
+      // Temporarily disable submission; keep draft only
+      localStorage.setItem(
+        "cham_membership_draft",
+        JSON.stringify({
+          form,
+          payment,
+        })
+      );
 
-      // 1) Not logged in => sign up email + password (sends confirmation email)
-      if (!user && !opts?.skipAuth) {
-        if (!password || password.length < 6) {
-          setErrorMsg("كلمة المرور مطلوبة (٦ محارف على الأقل)");
-          return;
-        }
-
-        localStorage.setItem(
-          "cham_membership_draft",
-          JSON.stringify({
-            form,
-            payment,
-          })
-        );
-
-        const redirectTo =
-          process.env.NEXT_PUBLIC_SITE_URL
-            ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-            : typeof window !== "undefined"
-              ? `${window.location.origin}/auth/callback`
-              : "http://localhost:3000/auth/callback";
-
-        const { error } = await supabaseClient.auth.signUp({
-          email: form.email.trim().toLowerCase(),
-          password,
-          options: { emailRedirectTo: redirectTo },
-        });
-
-        if (error) {
-          setErrorMsg(error.message || "فشل إنشاء الحساب");
-          return;
-        }
-
-        setSuccessMsg("تم إنشاء الحساب وإرسال رابط تأكيد البريد ✅ افتح الرابط ثم ارجع لهذه الصفحة لإكمال الطلب.");
-        return;
-      }
-
-      // 2) Logged in => submit
-      const fd = new FormData();
-      fd.append("gender", form.title);
-
-      // ✅ Names (latin required + arabic optional)
-      fd.append("first_name_latin", form.firstNameLatin.trim());
-      fd.append("last_name_latin", form.lastNameLatin.trim());
-      if (form.firstNameAr.trim()) fd.append("first_name_ar", form.firstNameAr.trim());
-      if (form.lastNameAr.trim()) fd.append("last_name_ar", form.lastNameAr.trim());
-
-      fd.append("date_of_birth", form.dateOfBirth);
-
-      // keep your existing profile columns too (email etc.)
-      fd.append("email", form.email.trim().toLowerCase());
-      fd.append("phone_country", form.phoneCountry);
-      fd.append("phone_number", form.phoneNumber.trim());
-
-      fd.append("street", form.street.trim());
-      fd.append("postal_code", form.postalCode.trim());
-      fd.append("city", form.city.trim());
-      fd.append("country", form.country);
-
-      fd.append("payment_method", toDbPaymentMethod(payment));
-      fd.append("amount_cents", "5000");
-      fd.append("currency", "EUR");
-
-      if (receipt) fd.append("receipt", receipt);
-
-      const res2 = await fetch("/api/membership/submit", { method: "POST", body: fd });
-      const out2 = await res2.json().catch(() => null);
-
-      if (!res2.ok || !out2?.ok) {
-        setErrorMsg(out2?.error || "فشل إرسال الطلب");
-        return;
-      }
-
-      setSuccessMsg("تم إرسال طلب الانتساب بنجاح ✅");
-      localStorage.removeItem("cham_membership_draft");
-      router.push("/dashboard");
+      setSuccessMsg("تم حفظ البيانات مؤقتاً. نظام الانتساب متوقف لإعادة البناء.");
     } catch (err: any) {
       setErrorMsg(err?.message || "خطأ غير متوقع");
     } finally {
@@ -367,8 +313,9 @@ export default function MembershipPage() {
               <label className="text-sm text-[color:var(--muted)]">الاسم (Latin) *</label>
               <input
                 value={form.firstNameLatin}
-                onChange={(e) => setField("firstNameLatin", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+                onChange={(e) => setField("firstNameLatin", latinOnly(e.target.value))}
+                dir="ltr"
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
                 placeholder="Example: Mohamed"
               />
             </div>
@@ -377,8 +324,9 @@ export default function MembershipPage() {
               <label className="text-sm text-[color:var(--muted)]">الكنية (Latin) *</label>
               <input
                 value={form.lastNameLatin}
-                onChange={(e) => setField("lastNameLatin", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+                onChange={(e) => setField("lastNameLatin", latinOnly(e.target.value))}
+                dir="ltr"
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
                 placeholder="Example: Ali"
               />
             </div>
@@ -418,11 +366,108 @@ export default function MembershipPage() {
           </div>
         </div>
 
-        {/* STEP 2: Address */}
+        {/* STEP 2: الحالة العائلية */}
         <div className="space-y-4">
           <div className="flex items-center gap-3 text-sm font-semibold text-[color:var(--primary-700)]">
             <span className="h-8 w-8 rounded-full border border-[color:var(--glass-border)] bg-white/75 text-center leading-8">
               2
+            </span>
+            الحالة العائلية
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="text-sm text-[color:var(--muted)]">الحالة العائلية</label>
+              <select
+                value={form.maritalStatus}
+                onChange={(e) => setField("maritalStatus", e.target.value as FormState["maritalStatus"])}
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+              >
+                <option value="">اختر</option>
+                <option value="single">أعزب</option>
+                <option value="married">متزوج</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm text-[color:var(--muted)]">عدد الأولاد</label>
+              <input
+                type="number"
+                min={0}
+                value={form.childrenCount}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const num = Math.max(0, Number(val || "0") || 0);
+                  const current = [...form.childrenNames];
+                  const nextNames = current.slice(0, num);
+                  while (nextNames.length < num) nextNames.push("");
+                  setForm((prev) => ({ ...prev, childrenCount: String(num), childrenNames: nextNames }));
+                }}
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+              />
+              <div className="mt-2 text-xs text-[color:var(--muted)]">يمكن ترك الأسماء فارغة (اختياري).</div>
+            </div>
+          </div>
+
+          {form.maritalStatus === "married" ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-sm text-[color:var(--muted)]">اسم الزوج/الزوجة (اختياري)</label>
+                  <input
+                    value={form.spouseFirst || ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, spouseFirst: latinOnly(e.target.value) }))
+                    }
+                    dir="ltr"
+                    className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
+                    placeholder="First name"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-[color:var(--muted)]">كنية الزوج/الزوجة (اختياري)</label>
+                  <input
+                    value={form.spouseLast || ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, spouseLast: latinOnly(e.target.value) }))
+                    }
+                    dir="ltr"
+                    className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
+                    placeholder="Last name"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {childrenCountNum > 0 ? (
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-[color:var(--primary-700)]">أسماء الأولاد (اختياري)</div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {Array.from({ length: childrenCountNum }).map((_, idx) => (
+                  <input
+                    key={idx}
+                    value={form.childrenNames[idx] || ""}
+                    onChange={(e) => {
+                      const next = [...form.childrenNames];
+                      next[idx] = latinOnly(e.target.value);
+                      setField("childrenNames", next);
+                    }}
+                    dir="ltr"
+                    className="w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
+                    placeholder={`Child ${idx + 1} name`}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* STEP 3: Address */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 text-sm font-semibold text-[color:var(--primary-700)]">
+            <span className="h-8 w-8 rounded-full border border-[color:var(--glass-border)] bg-white/75 text-center leading-8">
+              3
             </span>
             العنوان
           </div>
@@ -432,9 +477,10 @@ export default function MembershipPage() {
               <label className="text-sm text-[color:var(--muted)]">اسم ورقم الشارع</label>
               <input
                 value={form.street}
-                onChange={(e) => setField("street", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
-                placeholder="مثال: 10 Rue Victor Hugo"
+                onChange={(e) => setField("street", latinAndDigits(e.target.value))}
+                dir="ltr"
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
+                placeholder="e.g. 10 Rue Victor Hugo"
               />
             </div>
 
@@ -442,8 +488,9 @@ export default function MembershipPage() {
               <label className="text-sm text-[color:var(--muted)]">الرمز البريدي</label>
               <input
                 value={form.postalCode}
-                onChange={(e) => setField("postalCode", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+                onChange={(e) => setField("postalCode", latinAndDigits(e.target.value))}
+                dir="ltr"
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
                 placeholder="75000"
               />
             </div>
@@ -452,8 +499,9 @@ export default function MembershipPage() {
               <label className="text-sm text-[color:var(--muted)]">المدينة</label>
               <input
                 value={form.city}
-                onChange={(e) => setField("city", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+                onChange={(e) => setField("city", latinAndDigits(e.target.value))}
+                dir="ltr"
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
                 placeholder="Paris"
               />
             </div>
@@ -475,7 +523,7 @@ export default function MembershipPage() {
           </div>
         </div>
 
-        {/* STEP 3: Contact */}
+        {/* STEP 4: Contact */}
         <div className="space-y-4">
           <div className="flex items-center gap-3 text-sm font-semibold text-[color:var(--primary-700)]">
             <span className="h-8 w-8 rounded-full border border-[color:var(--glass-border)] bg-white/75 text-center leading-8">
@@ -489,9 +537,10 @@ export default function MembershipPage() {
               <label className="text-sm text-[color:var(--muted)]">البريد الإلكتروني</label>
               <input
                 value={form.email}
-                onChange={(e) => setField("email", e.target.value)}
+                onChange={(e) => setField("email", emailLatin(e.target.value))}
                 type="email"
-                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+                dir="ltr"
+                className="mt-1 w-full rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
                 placeholder="name@email.com"
               />
               <div className="mt-2 text-xs text-[color:var(--muted)]">
@@ -514,10 +563,18 @@ export default function MembershipPage() {
             <div className="md:col-span-2">
               <label className="text-sm text-[color:var(--muted)]">رقم الهاتف</label>
               <div className="mt-1 flex gap-2">
+                <input
+                  value={form.phoneNumber}
+                  onChange={(e) => setField("phoneNumber", phoneDigits(e.target.value))}
+                  dir="ltr"
+                  className="flex-1 rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
+                  placeholder="Phone number"
+                />
+
                 <select
                   value={form.phoneCountry}
                   onChange={(e) => setField("phoneCountry", e.target.value)}
-                  className="w-28 rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-2 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
+                  className="w-28 rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-2 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)] text-left"
                 >
                   {dialOptions.map((c) => (
                     <option key={c.dial} value={c.dial}>
@@ -525,13 +582,6 @@ export default function MembershipPage() {
                     </option>
                   ))}
                 </select>
-
-                <input
-                  value={form.phoneNumber}
-                  onChange={(e) => setField("phoneNumber", e.target.value)}
-                  className="flex-1 rounded-xl border border-[color:var(--glass-border)] bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[color:var(--primary-500)]"
-                  placeholder="رقم الهاتف"
-                />
               </div>
 
               <div className="mt-2 text-xs text-[color:var(--muted)]">
@@ -546,11 +596,11 @@ export default function MembershipPage() {
           </div>
         </div>
 
-        {/* STEP 4: Payment */}
+        {/* STEP 5: Payment */}
         <div className="space-y-4">
           <div className="flex items-center gap-3 text-sm font-semibold text-[color:var(--primary-700)]">
             <span className="h-8 w-8 rounded-full border border-[color:var(--glass-border)] bg-white/75 text-center leading-8">
-              4
+              5
             </span>
             وسائل الدفع
           </div>
