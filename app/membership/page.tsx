@@ -11,7 +11,7 @@ import {
   getUniqueDialCountries,
 } from "@/lib/countries";
 
-type PaymentUI = "stripe" | "apple" | "manual" | "waiver";
+type PaymentUI = "card" | "manual" | "waiver";
 
 type FormState = {
   title: "mr" | "mrs" | "";
@@ -43,8 +43,7 @@ type FormState = {
 };
 
 function toDbPaymentMethod(p: PaymentUI) {
-  if (p === "stripe") return "stripe_card";
-  if (p === "apple") return "apple_pay";
+  if (p === "card") return "card";
   return p;
 }
 
@@ -89,7 +88,7 @@ function phoneDigits(value: string) {
 
 export default function MembershipPage() {
   const router = useRouter();
-  const [payment, setPayment] = useState<PaymentUI>("stripe");
+  const [payment, setPayment] = useState<PaymentUI>("card");
   const [receipt, setReceipt] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
@@ -607,8 +606,7 @@ export default function MembershipPage() {
 
           <div className="grid gap-3 md:grid-cols-4">
             {[
-              { label: "بطاقة (Stripe)", value: "stripe" as const },
-              { label: "Apple Pay", value: "apple" as const },
+              { label: "بطاقة بنكية", value: "card" as const },
               { label: "رفع إيصال", value: "manual" as const },
               { label: "حالة خاصة", value: "waiver" as const },
             ].map((method) => (
@@ -659,8 +657,7 @@ export default function MembershipPage() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-[color:var(--muted)]">
-            بإرسال الطلب سيتم إنشاء حساب عضوية بحالة{" "}
-            <span className="font-medium">Pending</span> حتى تأكيد الدفع.
+            بإرسال الطلب سيتم حفظ بياناتك فقط. سيتم تفعيل الدفع والحساب لاحقاً بعد إعادة بناء النظام.
           </div>
 
           <button

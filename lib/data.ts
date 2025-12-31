@@ -1,5 +1,3 @@
-import { getSupabaseClient } from "./supabaseClient";
-
 export type NewsItem = {
   title: string;
   slug?: string | null;
@@ -51,44 +49,9 @@ const fallbackEvents: { upcoming: EventItem[]; past: EventItem[] } = {
 };
 
 export async function fetchNews(): Promise<NewsItem[]> {
-  const supabase = getSupabaseClient();
-  if (!supabase) return fallbackNews;
-
-  const { data, error } = await supabase
-    .from("news")
-    .select("title, slug, category, body, published_at")
-    .order("published_at", { ascending: false })
-    .limit(12);
-
-  if (error || !data) return fallbackNews;
-
-  return data.map((item) => ({
-    title: item.title,
-    slug: item.slug,
-    category: item.category,
-    excerpt: item.body?.slice(0, 120) ?? null,
-    published_at: item.published_at,
-  }));
+  return fallbackNews;
 }
 
 export async function fetchEvents(): Promise<{ upcoming: EventItem[]; past: EventItem[] }> {
-  const supabase = getSupabaseClient();
-  if (!supabase) return fallbackEvents;
-
-  const { data, error } = await supabase
-    .from("events")
-    .select("id, title, slug, description, start_at, end_at, location, status")
-    .order("start_at", { ascending: true })
-    .limit(20);
-
-  if (error || !data) return fallbackEvents;
-
-  const upcoming: EventItem[] = [];
-  const past: EventItem[] = [];
-  data.forEach((event) => {
-    if (event.status === "past") past.push(event);
-    else upcoming.push(event);
-  });
-
-  return { upcoming, past };
+  return fallbackEvents;
 }

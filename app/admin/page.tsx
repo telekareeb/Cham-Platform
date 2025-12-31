@@ -4,8 +4,8 @@ const members = [
 ];
 
 const payments = [
-  { user: "أحمد ح.", amount: "€50", method: "Stripe", status: "succeeded" },
-  { user: "ليلى ر.", amount: "€50", method: "Manual", status: "pending" },
+  { user: "أحمد ح.", amount: "€50", method: "بطاقة", status: "succeeded" },
+  { user: "ليلى ر.", amount: "€50", method: "تحويل", status: "pending" },
 ];
 
 export default function AdminPage() {
@@ -14,7 +14,7 @@ export default function AdminPage() {
       <section className="glass card">
         <div className="text-sm text-[color:var(--muted)]">لوحة الإدارة</div>
         <h1 className="text-3xl font-semibold text-[color:var(--primary-700)]">إدارة الأعضاء والدفعات والمحتوى</h1>
-        <p className="mt-2 text-[color:var(--text)]">بحث، فلترة، إرسال رسائل، ومزامنة Stripe.</p>
+        <p className="mt-2 text-[color:var(--text)]">بحث، فلترة، إرسال رسائل، وسيتم تفعيل الدفع لاحقاً.</p>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -41,7 +41,7 @@ export default function AdminPage() {
         <div className="glass card">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-[color:var(--primary-700)]">الدفعات</h2>
-            <button className="text-sm text-[color:var(--primary-700)] underline">Sync Stripe</button>
+            <span className="text-xs text-[color:var(--muted)]">التكامل متوقف حالياً</span>
           </div>
           <div className="mt-3 space-y-2">
             {payments.map((p) => (

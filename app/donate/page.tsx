@@ -20,7 +20,7 @@ export default function DonatePage() {
             ادعم جمعية شام
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-[color:var(--muted)]">
-            اختر مبلغاً أو أدخل مبلغك، ثم أكّد عبر Stripe أو Apple Pay.
+            اختر مبلغاً أو أدخل مبلغك. سيتم تفعيل بوابة الدفع لاحقاً بعد إعادة البناء.
             يمكن التبرع باسمك أو كمجهول مع إيصال PDF وشكر تلقائي.
           </p>
         </div>
@@ -70,9 +70,9 @@ export default function DonatePage() {
 
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 {[
-                  { label: "بطاقة (Stripe)", value: "stripe" },
-                  { label: "Apple Pay", value: "apple" },
+                  { label: "بطاقة بنكية", value: "card" },
                   { label: "رفع إيصال", value: "manual" },
+                  { label: "طريقة أخرى", value: "other" },
                 ].map((method) => (
                   <label
                     key={method.value}
@@ -90,7 +90,7 @@ export default function DonatePage() {
             </div>
 
             <div className="rounded-2xl border border-[color:var(--glass-border)] bg-white/60 p-4 text-xs text-[color:var(--muted)]">
-              ملاحظة: سيتم ربط Stripe/Apple Pay لاحقًا عند تجهيز مفاتيح الدفع + Webhooks.
+              ملاحظة: سيتم ربط بوابة دفع لاحقاً عند تجهيز النظام الجديد.
             </div>
           </div>
 
